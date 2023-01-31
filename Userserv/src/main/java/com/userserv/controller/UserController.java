@@ -2,6 +2,7 @@ package com.userserv.controller;
 
 import java.util.List;
 
+import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,9 @@ import com.userserv.entities.User;
 import com.userserv.exceptions.ResourceNotFoundException;
 import com.userserv.services.UserService;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+
 @RestController
 @RequestMapping("/users")
 public class UserController {
@@ -23,16 +27,32 @@ public class UserController {
 	@Autowired
 	private UserService userService;
 	
+	@Autowired
+	private Logger logger;
+	
 	@PostMapping
 	public ResponseEntity<User> createUser(@RequestBody User user){
 		User user1 = userService.saveUser(user);
 		return ResponseEntity.status(HttpStatus.CREATED).body(user1);
 	}
 	
+	int retryCount = 1;
+	
 	@GetMapping("/{userId}")
+	//@CircuitBreaker(name = "ratingHotelBreaker", fallbackMethod = "ratingHotelFallback")
+	@Retry(name = "ratingHotelService", fallbackMethod = "ratingHotelFallback")
 	public ResponseEntity<User> getUser(@PathVariable String userId) throws ResourceNotFoundException{
+		logger.info("Retry count : {}", retryCount);
+		retryCount++;
 		User user1 = userService.getUser(userId);
 		return ResponseEntity.ok(user1);
+	}
+	
+	//Fallback
+	public ResponseEntity<User> ratingHotelFallback(String userId, Exception ex){
+		logger.info("Fallback is executed because the service is down : ", ex.getMessage());
+		User user = User.builder().email("dummy@gmail.com").name("Dummy").userId("12345").build();
+		return new ResponseEntity<User>(user, HttpStatus.OK);
 	}
 	
 	@GetMapping
