@@ -19,6 +19,7 @@ import com.userserv.entities.Rating;
 import com.userserv.entities.User;
 import com.userserv.exceptions.ResourceNotFoundException;
 import com.userserv.external.services.Hotelserv;
+import com.userserv.external.services.Ratingserv;
 import com.userserv.repo.UserRepo;
 import com.userserv.services.UserService;
 
@@ -34,6 +35,9 @@ public class UserServiceImpl implements UserService{
 	@Autowired
 	private Hotelserv hotelserv;
 	
+	@Autowired
+	private Ratingserv ratingserv;
+	
 	private Logger logger = LoggerFactory.getLogger(UserServiceImpl.class);
 
 	@Override
@@ -45,7 +49,28 @@ public class UserServiceImpl implements UserService{
 
 	@Override
 	public List<User> getAllUsers() {
-		return userRepo.findAll();
+		List<User> users = userRepo.findAll();
+		
+		//api call to fetch ratings given by all the users from ratingserv		
+		List<User> ratingsByUsers = users.stream().map(user -> {
+				List<Rating> ratings = ratingserv.getRatingsByUserId(user.getUserId());
+				
+				List<Rating> ratingList = ratings.stream().map(rating -> {
+					
+					Hotel hotel = hotelserv.getHotel(rating.getHotelId());
+					
+					//set the hotel to rating
+					rating.setHotel(hotel);
+					
+					//return the rating
+					return rating;
+				}).collect(Collectors.toList());
+				
+				user.setRatings(ratingList);
+				return user;
+		}).collect(Collectors.toList());
+	
+		return ratingsByUsers;
 	}
 
 	@Override
@@ -55,9 +80,11 @@ public class UserServiceImpl implements UserService{
 		User user = userRepo.findById(userId).orElseThrow(()-> new ResourceNotFoundException("User with id "+userId+" not found"));
 		
 		//api call to fetch ratings given by the above user from ratingserv
-		Rating[] ratingsByUser = restTemplate.getForObject("http://RATINGSERV/ratings/user/"+user.getUserId(), Rating[].class);
-		logger.info("{}",ratingsByUser);
-		List<Rating> ratings = Arrays.stream(ratingsByUser).toList();
+//		Rating[] ratingsByUser = restTemplate.getForObject("http://RATINGSERV/ratings/user/"+user.getUserId(), Rating[].class);
+		List<Rating> ratings = ratingserv.getRatingsByUserId(user.getUserId());
+		logger.info("{}",ratings);
+//		List<Rating> ratings = ratingsByUser.stream().toList();
+//		List<Rating> ratings = Arrays.stream(ratingsByUser).toList();
 		
 		List<Rating> ratingList = ratings.stream().map(rating -> {
 			
